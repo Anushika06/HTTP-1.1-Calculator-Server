@@ -151,7 +151,15 @@ curl.exe -v "http://localhost:8080/add?a=2&b=3"
 ```
 
 ---
+## Screenshots
 
+| Server Logs | Test Outputs |
+| :---: | :---: |
+| ![Server logs](image.png) | ![Output of the test client](image-1.png) |
+| **Full HTTP Headers** | **Response Status Codes** |
+| ![HTTP/1.1 headers](image-2.png) | ![Response Status Codes](image-3.png) |
+
+---
 ## Key tests
 
 | Test | What it verifies |
