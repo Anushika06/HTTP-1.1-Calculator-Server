@@ -1,19 +1,6 @@
 """
-test_client.py
---------------
 Comprehensive test client for the HTTP/1.1 calculator server.
-
-All tests are run over a SINGLE TCP connection (one socket.create_connection
-call for the main test sequence). A separate connection is used only for
-isolated framing tests that intentionally break the connection.
-
-Run with:
-    python test_client.py
-
-The server must be running first:
-    python server.py
-
-Exit code: 0 if all tests pass, 1 if any fail.
+All tests are run over a SINGLE TCP connection except for body-boundary tests.
 """
 
 import socket
@@ -25,17 +12,11 @@ PORT = 8080
 RECV_SIZE = 4096
 
 
-# ---------------------------------------------------------------------------
-# Buffered socket wrapper
-# Maintains a per-socket byte buffer so that leftover bytes from one
-# recv_response() call are available for the next call on the same socket.
-# This is essential for the concatenated-request test where the server may
-# return two responses in rapid succession and a single sock.recv() may
-# contain both.
-# ---------------------------------------------------------------------------
-
 class BufferedSocket:
-    """Thin wrapper around a socket that maintains a persistent read buffer."""
+    """
+    Maintains a per-socket byte buffer so leftover bytes from one recv_response() 
+    call are available for the next call on the same socket (essential for pipelining).
+    """
 
     def __init__(self, sock: socket.socket) -> None:
         self._sock = sock
@@ -54,10 +35,8 @@ class BufferedSocket:
         """
         Read exactly one HTTP response from the socket, using the internal
         buffer to avoid discarding leftover bytes between calls.
-
         Returns (status_code, headers_text, body_text).
         """
-        # Phase 1: read until the header terminator is found
         while b"\r\n\r\n" not in self._buf:
             chunk = self._sock.recv(RECV_SIZE)
             if not chunk:
@@ -66,21 +45,15 @@ class BufferedSocket:
 
         idx = self._buf.index(b"\r\n\r\n")
         header_section = self._buf[:idx].decode("latin-1")
-        self._buf = self._buf[idx + 4:]  # remainder after blank line
-
-        # Phase 2: parse status code
+        self._buf = self._buf[idx + 4:]
         status_line = header_section.split("\r\n")[0]
         parts = status_line.split(" ", 2)
         status_code = int(parts[1])
-
-        # Phase 3: parse Content-Length
         content_length = 0
         for line in header_section.split("\r\n")[1:]:
             if line.lower().startswith("content-length:"):
                 content_length = int(line.split(":", 1)[1].strip())
                 break
-
-        # Phase 4: read exactly content_length body bytes
         while len(self._buf) < content_length:
             chunk = self._sock.recv(RECV_SIZE)
             if not chunk:
@@ -88,7 +61,7 @@ class BufferedSocket:
             self._buf += chunk
 
         body = self._buf[:content_length].decode("utf-8")
-        self._buf = self._buf[content_length:]  # preserve remainder for next call
+        self._buf = self._buf[content_length:]
 
         return status_code, header_section, body
 
@@ -100,9 +73,7 @@ def connect() -> BufferedSocket:
     return BufferedSocket(raw)
 
 
-# ---------------------------------------------------------------------------
-# Request builders
-# ---------------------------------------------------------------------------
+
 
 def make_get(path: str, *, host: str = "localhost", extra_headers: str = "") -> bytes:
     """Build a minimal GET request."""
@@ -127,9 +98,7 @@ def make_post(path: str, body: str = "", *, host: str = "localhost") -> bytes:
     return req.encode() + body_bytes
 
 
-# ---------------------------------------------------------------------------
-# Test framework
-# ---------------------------------------------------------------------------
+
 
 _pass = 0
 _fail = 0
@@ -149,9 +118,7 @@ def check(label: str, actual, expected, *, info: str = "") -> None:
         _fail += 1
 
 
-# ---------------------------------------------------------------------------
-# Test suites
-# ---------------------------------------------------------------------------
+
 
 def test_basic_operations(bsock: BufferedSocket) -> None:
     """Send the seven required requests over one socket."""
@@ -338,9 +305,7 @@ def test_post_without_host(bsock: BufferedSocket) -> None:
     check("POST /add (no Host) -> 405", status, 405)
 
 
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
+
 
 def main() -> None:
     print(f"Starting test suite against server at {HOST}:{PORT}")

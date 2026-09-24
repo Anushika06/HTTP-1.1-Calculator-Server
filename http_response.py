@@ -1,6 +1,4 @@
 """
-http_response.py
-----------------
 Builds raw HTTP/1.1 response bytes.
 """
 
@@ -21,20 +19,6 @@ def build_response(
     extra_headers: dict | None = None,
     keep_alive: bool = True,
 ) -> bytes:
-    """
-    Build a complete HTTP/1.1 response as bytes.
-
-    Args:
-        status:        HTTP status code.
-        body:          Response body text (no trailing newline required).
-        content_type:  Value for Content-Type header.
-        extra_headers: Additional headers to include (dict[str, str]).
-        keep_alive:    If True, send 'Connection: keep-alive';
-                       if False, send 'Connection: close'.
-
-    Returns:
-        Raw bytes ready to be sent via sendall().
-    """
     reason = REASON_PHRASES.get(status, "Unknown")
     body_bytes = body.encode("utf-8")
 
@@ -51,6 +35,5 @@ def build_response(
         for name, value in extra_headers.items():
             headers.append(f"{name}: {value}")
 
-    # Blank line separates headers from body
     raw = "\r\n".join(headers) + "\r\n\r\n"
     return raw.encode("utf-8") + body_bytes

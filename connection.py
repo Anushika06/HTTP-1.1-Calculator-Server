@@ -58,7 +58,7 @@ def _read_headers(conn: socket.socket, buf: bytes) -> tuple[bytes, bytes]:
         idx = buf.find(b"\r\n\r\n")
         if idx != -1:
             header_bytes = buf[:idx]
-            remainder = buf[idx + 4:]  # skip past the blank line
+            remainder = buf[idx + 4:]
             return header_bytes, remainder
 
         if len(buf) > MAX_HEADER_SIZE:
@@ -69,12 +69,8 @@ def _read_headers(conn: socket.socket, buf: bytes) -> tuple[bytes, bytes]:
 
 def _read_body(conn: socket.socket, buf: bytes, length: int) -> tuple[bytes, bytes]:
     """
-    Read exactly *length* bytes from the buffer (fetching more from *conn*
-    as needed).
-
+    Read exactly length bytes from the buffer (fetching more as needed).
     Returns (body_bytes, remainder_after_body).
-
-    The remainder belongs to the NEXT request and must NOT be discarded.
     """
     while len(buf) < length:
         buf = _recv_into_buffer(conn, buf)
@@ -86,40 +82,25 @@ def _read_body(conn: socket.socket, buf: bytes, length: int) -> tuple[bytes, byt
 
 def handle_connection(conn: socket.socket, addr: tuple) -> None:
     """
-    Process all HTTP requests on *conn* until the client disconnects or an
+    Process all HTTP requests on conn until the client disconnects or an
     unrecoverable framing error forces closure.
-
-    This function is the inner loop:
-
-        while True:
-            read one request (headers + optional body)
-            parse it
-            route it
-            send response
-            keep-alive → continue
     """
     print(f"[connection] accepted from {addr}")
     buf = b""
 
     try:
         while True:
-            # ----------------------------------------------------------------
-            # Phase 1: accumulate until we have the full header section
-            # ----------------------------------------------------------------
             try:
                 header_bytes, buf = _read_headers(conn, buf)
             except ConnectionError:
                 print("[connection] client disconnected (no more data)")
                 return
             except ValueError as exc:
-                # Framing error — we cannot reliably parse even the headers.
                 print(f"[connection] header framing error: {exc}")
                 _send_framing_error(conn)
-                return  # close after framing error
+                return
 
-            # ----------------------------------------------------------------
-            # Phase 2: parse the header section
-            # ----------------------------------------------------------------
+
             framing_error = False
             request = None
             parse_exc_msg = ""
@@ -131,14 +112,11 @@ def handle_connection(conn: socket.socket, addr: tuple) -> None:
                 framing_error = True
 
             if framing_error:
-                # Could not parse the request line / headers → framing error
                 print(f"[connection] request parse error: {parse_exc_msg}")
                 _send_framing_error(conn)
                 return
 
-            # ----------------------------------------------------------------
-            # Phase 3: read body if Content-Length is present
-            # ----------------------------------------------------------------
+
             content_length = 0
             raw_cl = request["headers"].get("content-length", "").strip()
             if raw_cl:
@@ -149,7 +127,7 @@ def handle_connection(conn: socket.socket, addr: tuple) -> None:
                 except ValueError as exc:
                     print(f"[connection] invalid Content-Length: {exc}")
                     _send_framing_error(conn)
-                    return  # framing error — can't trust message boundary
+                    return
 
             if content_length > 0:
                 try:
@@ -157,17 +135,11 @@ def handle_connection(conn: socket.socket, addr: tuple) -> None:
                 except ConnectionError:
                     print("[connection] client disconnected while reading body")
                     return
-                # body is available in _body_bytes if we ever need it
 
-            # ----------------------------------------------------------------
-            # Phase 4: route the (fully-framed) request
-            # ----------------------------------------------------------------
+
             status, body = route(request)
 
-            # ----------------------------------------------------------------
-            # Phase 5: send response
-            # ----------------------------------------------------------------
-            # Always keep-alive — only framing errors cause closure above.
+
             response_bytes = build_response(status, body, keep_alive=True)
             conn.sendall(response_bytes)
 
@@ -185,8 +157,7 @@ def handle_connection(conn: socket.socket, addr: tuple) -> None:
 
 def _send_framing_error(conn: socket.socket) -> None:
     """
-    Send a 400 Bad Request with Connection: close to signal the end of the
-    connection due to an unrecoverable framing error.
+    Send a 400 Bad Request with Connection: close to signal unrecoverable framing error.
     """
     try:
         response = build_response(
@@ -196,4 +167,4 @@ def _send_framing_error(conn: socket.socket) -> None:
         )
         conn.sendall(response)
     except OSError:
-        pass  # peer may have already gone away
+        pass
